@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.controller.response import success, failure
 from app.services.movie_service import get_movies, get_movie_by_id, add_movie
-from app.schemas.movie import MovieCreate, MovieUpdate
-from app.services.movie_service import add_movie, update_movie
+from app.schemas.movie import MovieCreate, MovieUpdate, MovieRatingCreate
+from app.services.movie_service import add_movie, update_movie, remove_movie, add_movie_rating
 
 
 router = APIRouter(prefix="/api/v1/movies", tags=["movies"])

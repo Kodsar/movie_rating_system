@@ -1,6 +1,9 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+class MovieRatingCreate(BaseModel):
+    # Rating score must be between 1 and 10
+    score: int = Field(..., ge=1, le=10)
 
 class MovieUpdate(BaseModel):
     title: str = Field(..., min_length=1, max_length=300)

@@ -7,15 +7,53 @@ from app.repositories.movie_repo import (
     insert_movie_genres,
     list_movies_detailed_filtered,
     get_movie_detail,
+    get_movie_by_id,
     get_movie_by_id as repo_get_movie_by_id,
     update_movie_fields,
     replace_movie_genres,
     get_director_by_id,
     get_genres_by_ids,
+    delete_movie,
+    create_movie_rating,
+    get_movie_rating_stats,
+
 )
 
 from app.repositories.movie_repo import director_exists, get_genres_by_ids, create_movie, set_movie_genres
 
+def remove_movie(db: Session, movie_id: int) -> bool:
+    # Remove movie and its dependencies in a single transaction
+    try:
+        ok = delete_movie(db, movie_id)
+        if not ok:
+            return False
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+
+
+def add_movie_rating(db: Session, movie_id: int, score: int):
+    # Ensure movie exists
+    movie = get_movie_by_id(db, movie_id)
+    if movie is None:
+        return None
+
+    try:
+        create_movie_rating(db, movie_id, score)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    avg, cnt = get_movie_rating_stats(db, movie_id)
+
+    return {
+        "movie_id": movie_id,
+        "average_rating": (round(avg, 1) if avg is not None else None),
+        "ratings_count": int(cnt),
+    }
 
 
 def update_movie(db: Session, movie_id: int, payload):

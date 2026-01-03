@@ -5,6 +5,47 @@ from app.models import Movie, Director, Genre, MovieRating
 from app.models.movie_genre import genres_movie
 
 
+
+def get_movie_by_id(db: Session, movie_id: int) -> Movie | None:
+    # Fetch a movie by id
+    return db.execute(select(Movie).where(Movie.id == movie_id)).scalar_one_or_none()
+
+
+def delete_movie(db: Session, movie_id: int) -> bool:
+    # Delete movie and related rows (ratings + association table)
+    movie = get_movie_by_id(db, movie_id)
+    if movie is None:
+        return False
+
+    db.execute(delete(MovieRating).where(MovieRating.movie_id == movie_id))
+    db.execute(delete(genres_movie).where(genres_movie.c.movie_id == movie_id))
+    db.execute(delete(Movie).where(Movie.id == movie_id))
+    return True
+
+
+def create_movie_rating(db: Session, movie_id: int, score: int) -> MovieRating:
+    # Insert a new rating row for a movie
+    rating = MovieRating(movie_id=movie_id, score=score)
+    db.add(rating)
+    db.flush()  # ensures rating.id is generated
+    return rating
+
+
+def get_movie_rating_stats(db: Session, movie_id: int) -> tuple[float | None, int]:
+    # Compute average rating and ratings count for a single movie
+    avg_score, cnt = db.execute(
+        select(func.avg(MovieRating.score), func.count(MovieRating.id))
+        .where(MovieRating.movie_id == movie_id)
+    ).one()
+
+    avg = float(avg_score) if avg_score is not None else None
+    count = int(cnt or 0)
+    return avg, count
+
+
+
+
+
 def get_movie_by_id(db: Session, movie_id: int) -> Movie | None:
     # Fetch movie row by id
     return db.execute(select(Movie).where(Movie.id == movie_id)).scalar_one_or_none()
