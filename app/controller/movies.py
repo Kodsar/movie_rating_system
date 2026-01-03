@@ -5,6 +5,8 @@ from app.db.session import get_db
 from app.controller.response import success, failure
 from app.services.movie_service import get_movies, get_movie_by_id, add_movie
 from app.schemas.movie import MovieCreate
+from app.services.movie_service import add_movie
+
 
 router = APIRouter(prefix="/api/v1/movies", tags=["movies"])
 
