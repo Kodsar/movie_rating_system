@@ -20,6 +20,9 @@ from app.repositories.movie_repo import (
 )
 
 from app.repositories.movie_repo import director_exists, get_genres_by_ids, create_movie, set_movie_genres
+from app.core.logging import setup_logger
+
+logger = setup_logger()
 
 def remove_movie(db: Session, movie_id: int) -> bool:
     # Remove movie and its dependencies in a single transaction
@@ -28,6 +31,8 @@ def remove_movie(db: Session, movie_id: int) -> bool:
         if not ok:
             return False
         db.commit()
+        logger.info("Movie deleted: movie_id=%s", movie_id)
+
         return True
     except Exception:
         db.rollback()
@@ -35,14 +40,17 @@ def remove_movie(db: Session, movie_id: int) -> bool:
 
 
 def add_movie_rating(db: Session, movie_id: int, score: int):
+    
+
     # Ensure movie exists
     movie = get_movie_by_id(db, movie_id)
     if movie is None:
-        return None
+        raise MovieNotFoundException(movie_id)
 
     try:
         create_movie_rating(db, movie_id, score)
         db.commit()
+        logger.info( "Rating added: movie_id=%s score=%s", movie_id, score,)
     except Exception:
         db.rollback()
         raise
@@ -64,7 +72,7 @@ def update_movie(db: Session, movie_id: int, payload):
     # Ensure movie exists
     movie = repo_get_movie_by_id(db, movie_id)
     if movie is None:
-        return None
+        raise MovieNotFoundException(movie_id)
 
     # Validate director
     director = get_director_by_id(db, payload.director_id)
@@ -123,6 +131,9 @@ def add_movie(db: Session, payload):
     if len(genres) != len(unique_genre_ids):
         raise ValueError("Invalid director_id or genres")
 
+
+
+    
     # Create movie + association rows within a transaction
     try:
         movie = create_movie(
@@ -135,10 +146,14 @@ def add_movie(db: Session, payload):
         insert_movie_genres(db, movie.id, unique_genre_ids)
 
         db.commit()
+        logger.info("Movie created: id=%s title='%s'", movie.id, movie.title,)
+
         db.refresh(movie)
     except Exception:
         db.rollback()
         raise
+
+    
 
     return {
         "id": movie.id,

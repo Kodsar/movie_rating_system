@@ -1,10 +1,17 @@
 from fastapi import FastAPI, Request
+
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.controller.movies import router as movies_router
 
-app = FastAPI(title="Movie Rating System (Phase 1)")
+from app.middleware.logging import RequestLoggingMiddleware
+from app.core.logging import setup_logger
+logger = setup_logger()
+
+app = FastAPI(title="Movie Rating System")
+
+app.add_middleware(RequestLoggingMiddleware)
 
 @app.get("/health")
 def health():
@@ -18,3 +25,4 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 app.include_router(movies_router)
+logger.info("Application startup complete")

@@ -1,0 +1,24 @@
+from app.exceptions.base import AppException
+
+
+class MovieNotFoundException(AppException):
+    status_code = 404
+
+    def __init__(self, movie_id: int):
+        super().__init__(f"Movie not found (id={movie_id})")
+
+
+class InvalidDirectorOrGenresException(AppException):
+    status_code = 422
+
+    def __init__(self):
+        super().__init__("Invalid director_id or genres")
+
+
+class InvalidRatingScoreException(AppException):
+    status_code = 422
+
+    def __init__(self):
+        super().__init__("Rating score must be between 1 and 10")
+
+
