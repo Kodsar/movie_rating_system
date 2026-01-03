@@ -3,9 +3,23 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.controller.response import success, failure
-from app.services.movie_service import get_movies, get_movie_by_id
+from app.services.movie_service import get_movies, get_movie_by_id, add_movie
+from app.schemas.movie import MovieCreate
 
 router = APIRouter(prefix="/api/v1/movies", tags=["movies"])
+
+
+
+
+@router.post("/", status_code=status.HTTP_201_CREATED)
+def create_movie_endpoint(payload: MovieCreate, db: Session = Depends(get_db)):
+    try:
+        data = add_movie(db, payload)
+        return success(data, http_status=status.HTTP_201_CREATED)
+    except ValueError as e:
+        return failure(422, str(e) if str(e) else "Invalid director_id or genres")
+
+
 
 
 @router.get(

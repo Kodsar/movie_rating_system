@@ -5,6 +5,38 @@ from app.repositories.movie_repo import (
     get_movie_detail,
 )
 
+from app.repositories.movie_repo import director_exists, get_genres_by_ids, create_movie, set_movie_genres
+
+
+def add_movie(db: Session, payload):
+    # Validate director existence
+    if not director_exists(db, payload.title and payload.director_id):
+        raise ValueError("Invalid director_id or genres")
+
+    # Validate genres existence
+    genres = get_genres_by_ids(db, payload.genres)
+    if len(genres) != len(set(payload.genres)):
+        raise ValueError("Invalid director_id or genres")
+
+    # Create movie + association rows in a transaction
+    movie = create_movie(db, payload.title, payload.director_id, payload.release_year, payload.cast)
+    set_movie_genres(db, movie.id, payload.genres)
+
+    db.commit()
+    db.refresh(movie)
+
+    return {
+        "id": movie.id,
+        "title": movie.title,
+        "release_year": movie.release_year,
+        "director": {"id": payload.director_id, "name": movie.director.name},
+        "genres": [g.name for g in genres],
+        "cast": movie.cast,
+        "average_rating": None,
+        "ratings_count": 0,
+    }
+
+
 
 def get_movies(
     db: Session,

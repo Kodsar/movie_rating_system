@@ -5,6 +5,37 @@ from app.models import Movie, Director, Genre, MovieRating
 from app.models.movie_genre import genres_movie
 
 
+
+
+
+
+def director_exists(db: Session, director_id: int) -> bool:
+    return db.execute(select(Director.id).where(Director.id == director_id)).first() is not None
+
+
+def get_genres_by_ids(db: Session, genre_ids: list[int]) -> list[Genre]:
+    if not genre_ids:
+        return []
+    return db.execute(select(Genre).where(Genre.id.in_(genre_ids))).scalars().all()
+
+
+def create_movie(db: Session, title: str, director_id: int, release_year: int, cast: str | None):
+    movie = Movie(title=title, director_id=director_id, release_year=release_year, cast=cast)
+    db.add(movie)
+    db.flush()  # Get movie.id without committing yet
+    return movie
+
+
+def set_movie_genres(db: Session, movie_id: int, genre_ids: list[int]):
+    # Insert rows into association table
+    if not genre_ids:
+        return
+    db.execute(
+        genres_movie.insert(),
+        [{"movie_id": movie_id, "genre_id": gid} for gid in genre_ids],
+    )
+
+
 def list_movies_detailed_filtered(
     db: Session,
     page: int,
