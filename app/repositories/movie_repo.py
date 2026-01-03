@@ -5,10 +5,68 @@ from app.models import Movie, Director, Genre, MovieRating
 from app.models.movie_genre import genres_movie
 
 
-
 def get_movie_by_id(db: Session, movie_id: int) -> Movie | None:
-    # Fetch a movie by id
+    # Fetch movie row by id
     return db.execute(select(Movie).where(Movie.id == movie_id)).scalar_one_or_none()
+
+
+def get_director_by_id(db: Session, director_id: int) -> Director | None:
+    # Fetch director by id
+    return db.execute(select(Director).where(Director.id == director_id)).scalar_one_or_none()
+
+
+def get_genres_by_ids(db: Session, genre_ids: list[int]) -> list[Genre]:
+    # Fetch all genres matching the given IDs
+    if not genre_ids:
+        return []
+    return db.execute(select(Genre).where(Genre.id.in_(genre_ids))).scalars().all()
+
+
+def create_movie(db: Session, title: str, director_id: int, release_year: int, cast: str | None) -> Movie:
+    # Create Movie row (flush to get ID without committing)
+    movie = Movie(title=title, director_id=director_id, release_year=release_year, cast=cast)
+    db.add(movie)
+    db.flush()
+    return movie
+
+
+def insert_movie_genres(db: Session, movie_id: int, genre_ids: list[int]) -> None:
+    # Insert association rows into genres_movie
+    if not genre_ids:
+        return
+    db.execute(
+        genres_movie.insert(),
+        [{"movie_id": movie_id, "genre_id": gid} for gid in genre_ids],
+    )
+
+
+def update_movie_fields(
+    db: Session,
+    movie: Movie,
+    title: str,
+    director_id: int,
+    release_year: int,
+    cast: str | None,
+) -> Movie:
+    # Update mutable fields on the Movie ORM object
+    movie.title = title
+    movie.director_id = director_id
+    movie.release_year = release_year
+    movie.cast = cast
+    db.add(movie)
+    db.flush()
+    return movie
+
+
+def replace_movie_genres(db: Session, movie_id: int, genre_ids: list[int]) -> None:
+    # Replace all existing genres for the movie with the provided list
+    db.execute(delete(genres_movie).where(genres_movie.c.movie_id == movie_id))
+    if not genre_ids:
+        return
+    db.execute(
+        genres_movie.insert(),
+        [{"movie_id": movie_id, "genre_id": gid} for gid in genre_ids],
+    )
 
 
 def delete_movie(db: Session, movie_id: int) -> bool:
@@ -43,99 +101,6 @@ def get_movie_rating_stats(db: Session, movie_id: int) -> tuple[float | None, in
     return avg, count
 
 
-
-
-
-def get_movie_by_id(db: Session, movie_id: int) -> Movie | None:
-    # Fetch movie row by id
-    return db.execute(select(Movie).where(Movie.id == movie_id)).scalar_one_or_none()
-
-
-def update_movie_fields(db: Session, movie: Movie, title: str, director_id: int, release_year: int, cast: str | None) -> Movie:
-    # Update mutable fields on the Movie ORM object
-    movie.title = title
-    movie.director_id = director_id
-    movie.release_year = release_year
-    movie.cast = cast
-    db.add(movie)
-    db.flush()
-    return movie
-
-
-def replace_movie_genres(db: Session, movie_id: int, genre_ids: list[int]) -> None:
-    # Replace all existing genres for the movie with the provided list
-    db.execute(delete(genres_movie).where(genres_movie.c.movie_id == movie_id))
-    if not genre_ids:
-        return
-    db.execute(
-        genres_movie.insert(),
-        [{"movie_id": movie_id, "genre_id": gid} for gid in genre_ids],
-    )
-
-
-
-
-
-
-
-def get_director_by_id(db: Session, director_id: int) -> Director | None:
-    # Fetch director by id (None if not found)
-    return db.execute(select(Director).where(Director.id == director_id)).scalar_one_or_none()
-
-
-def get_genres_by_ids(db: Session, genre_ids: list[int]) -> list[Genre]:
-    # Fetch all genres matching the given IDs
-    if not genre_ids:
-        return []
-    return db.execute(select(Genre).where(Genre.id.in_(genre_ids))).scalars().all()
-
-
-def create_movie(db: Session, title: str, director_id: int, release_year: int, cast: str | None) -> Movie:
-    # Create Movie row (flush to get ID without committing)
-    movie = Movie(title=title, director_id=director_id, release_year=release_year, cast=cast)
-    db.add(movie)
-    db.flush()
-    return movie
-
-
-def insert_movie_genres(db: Session, movie_id: int, genre_ids: list[int]) -> None:
-    # Insert association rows into genres_movie
-    if not genre_ids:
-        return
-    db.execute(
-        genres_movie.insert(),
-        [{"movie_id": movie_id, "genre_id": gid} for gid in genre_ids],
-    )
-
-
-
-def director_exists(db: Session, director_id: int) -> bool:
-    return db.execute(select(Director.id).where(Director.id == director_id)).first() is not None
-
-
-def get_genres_by_ids(db: Session, genre_ids: list[int]) -> list[Genre]:
-    if not genre_ids:
-        return []
-    return db.execute(select(Genre).where(Genre.id.in_(genre_ids))).scalars().all()
-
-
-def create_movie(db: Session, title: str, director_id: int, release_year: int, cast: str | None):
-    movie = Movie(title=title, director_id=director_id, release_year=release_year, cast=cast)
-    db.add(movie)
-    db.flush()  # Get movie.id without committing yet
-    return movie
-
-
-def set_movie_genres(db: Session, movie_id: int, genre_ids: list[int]):
-    # Insert rows into association table
-    if not genre_ids:
-        return
-    db.execute(
-        genres_movie.insert(),
-        [{"movie_id": movie_id, "genre_id": gid} for gid in genre_ids],
-    )
-
-
 def list_movies_detailed_filtered(
     db: Session,
     page: int,
@@ -145,42 +110,33 @@ def list_movies_detailed_filtered(
     genre: str | None = None,
 ):
     # Build a base query that returns filtered Movie IDs only.
-    # This keeps the count accurate and avoids heavy joins for pagination.
     base = select(Movie.id)
 
-    # Apply filters with AND logic by chaining conditions.
     if title:
-        # Case-insensitive partial match on title
         base = base.where(Movie.title.ilike(f"%{title}%"))
 
     if release_year is not None:
         base = base.where(Movie.release_year == release_year)
 
     if genre:
-        # Filter movies that have a genre with the given name
         base = (
             base.join(genres_movie, genres_movie.c.movie_id == Movie.id)
             .join(Genre, Genre.id == genres_movie.c.genre_id)
             .where(Genre.name == genre)
         )
 
-    # Ensure uniqueness when joins are involved (e.g., genre filter).
     base_subq = base.distinct().subquery()
 
-    # Count total items AFTER filters
     total_items = db.scalar(select(func.count()).select_from(base_subq)) or 0
 
-    # Apply pagination on filtered IDs
     offset = (page - 1) * page_size
     paged_ids = db.execute(
         select(base_subq.c.id).order_by(base_subq.c.id).offset(offset).limit(page_size)
     ).scalars().all()
 
     if not paged_ids:
-        # No items on this page (or filters too restrictive)
         return int(total_items), [], {}
 
-    # Aggregate ratings per movie (AVG + COUNT)
     ratings_agg = (
         select(
             MovieRating.movie_id.label("movie_id"),
@@ -191,7 +147,6 @@ def list_movies_detailed_filtered(
         .subquery()
     )
 
-    # Fetch Movie + Director + rating aggregates for the paged IDs
     rows = db.execute(
         select(Movie, Director, ratings_agg.c.avg_rating, ratings_agg.c.ratings_count)
         .join(Director, Movie.director_id == Director.id)
@@ -214,14 +169,12 @@ def list_movies_detailed_filtered(
         )
         movie_ids.append(movie.id)
 
-    # Fetch genres for all movies in the current page in a single query
     genres_rows = db.execute(
         select(genres_movie.c.movie_id, Genre.name)
         .join(Genre, Genre.id == genres_movie.c.genre_id)
         .where(genres_movie.c.movie_id.in_(movie_ids))
     ).all()
 
-    # Build a mapping: movie_id -> list of genre names
     genres_map: dict[int, list[str]] = {}
     for mid, gname in genres_rows:
         genres_map.setdefault(mid, []).append(gname)
@@ -230,7 +183,6 @@ def list_movies_detailed_filtered(
 
 
 def get_movie_detail(db: Session, movie_id: int):
-    # Fetch movie + director; if not found, return None
     row = db.execute(
         select(Movie, Director)
         .join(Director, Movie.director_id == Director.id)
@@ -242,7 +194,6 @@ def get_movie_detail(db: Session, movie_id: int):
 
     movie, director = row
 
-    # Aggregate ratings for the movie (AVG + COUNT)
     ratings_row = db.execute(
         select(
             func.avg(MovieRating.score).label("avg_rating"),
@@ -250,7 +201,6 @@ def get_movie_detail(db: Session, movie_id: int):
         ).where(MovieRating.movie_id == movie_id)
     ).one()
 
-    # Fetch genres for this movie
     genres = db.execute(
         select(Genre.name)
         .join(genres_movie, genres_movie.c.genre_id == Genre.id)
@@ -266,5 +216,5 @@ def get_movie_detail(db: Session, movie_id: int):
     }
 
 
-# Backward-compatible alias to avoid import errors in older service code
+# Backward-compatible alias (optional)
 list_movies_detailed = list_movies_detailed_filtered

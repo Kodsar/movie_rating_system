@@ -3,25 +3,17 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.controller.response import success, failure
-from app.services.movie_service import get_movies, get_movie_by_id, add_movie
 from app.schemas.movie import MovieCreate, MovieUpdate, MovieRatingCreate
-from app.services.movie_service import add_movie, update_movie, remove_movie, add_movie_rating
-
+from app.services.movie_service import (
+    get_movies,
+    get_movie_detail_by_id,
+    add_movie,
+    update_movie,
+    remove_movie,
+    add_movie_rating,
+)
 
 router = APIRouter(prefix="/api/v1/movies", tags=["movies"])
-
-
-
-
-@router.post("/", status_code=status.HTTP_201_CREATED)
-def create_movie_endpoint(payload: MovieCreate, db: Session = Depends(get_db)):
-    try:
-        data = add_movie(db, payload)
-        return success(data, http_status=status.HTTP_201_CREATED)
-    except ValueError as e:
-        return failure(422, str(e) if str(e) else "Invalid director_id or genres")
-
-
 
 
 @router.post(
@@ -46,10 +38,7 @@ def create_movie_endpoint(payload: MovieCreate, db: Session = Depends(get_db)):
         data = add_movie(db, payload)
         return success(data, http_status=status.HTTP_201_CREATED)
     except ValueError as e:
-        msg = str(e) if str(e) else "Invalid director_id or genres"
-        return failure(422, msg)
-
-
+        return failure(422, str(e) if str(e) else "Invalid director_id or genres")
 
 
 @router.get(
@@ -112,7 +101,7 @@ def movie_detail(
     db: Session = Depends(get_db),
 ):
     try:
-        data = get_movie_by_id(db=db, movie_id=movie_id)
+        data = get_movie_detail_by_id(db=db, movie_id=movie_id)
     except ValueError:
         return failure(422, "Invalid movie_id")
 
@@ -120,7 +109,6 @@ def movie_detail(
         return failure(404, "Movie not found")
 
     return success(data, http_status=status.HTTP_200_OK)
-
 
 
 @router.put(
@@ -151,3 +139,59 @@ def update_movie_endpoint(
         return failure(404, "Movie not found")
 
     return success(data, http_status=status.HTTP_200_OK)
+
+
+@router.delete("/{movie_id}", status_code=status.HTTP_200_OK)
+def delete_movie_endpoint(
+    movie_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db),
+):
+    ok = remove_movie(db, movie_id)
+    if not ok:
+        return failure(404, "Movie not found")
+    return success({"message": "Movie deleted"})
+
+
+@router.post(
+    "/{movie_id}/ratings",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        404: {
+            "description": "Movie Not Found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "failure",
+                        "error": {"code": 404, "message": "Movie not found"},
+                    }
+                }
+            },
+        },
+        422: {
+            "description": "Validation Error",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "failure",
+                        "error": {"code": 422, "message": "Score must be an integer between 1 and 10"},
+                    }
+                }
+            },
+        },
+    },
+)
+def create_rating_endpoint(
+    movie_id: int = Path(..., ge=1),
+    payload: MovieRatingCreate = ...,
+    db: Session = Depends(get_db),
+):
+    try:
+        data = add_movie_rating(db=db, movie_id=movie_id, score=payload.score)
+    except ValueError as e:
+        msg = str(e) if str(e) else "Score must be an integer between 1 and 10"
+        return failure(422, msg)
+
+    if data is None:
+        return failure(404, "Movie not found")
+
+    return success(data, http_status=status.HTTP_201_CREATED)
