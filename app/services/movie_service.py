@@ -1,40 +1,122 @@
 from sqlalchemy.orm import Session
 
 from app.repositories.movie_repo import (
+    get_director_by_id,
+    get_genres_by_ids,
+    create_movie,
+    insert_movie_genres,
     list_movies_detailed_filtered,
     get_movie_detail,
+    get_movie_by_id as repo_get_movie_by_id,
+    update_movie_fields,
+    replace_movie_genres,
+    get_director_by_id,
+    get_genres_by_ids,
 )
 
 from app.repositories.movie_repo import director_exists, get_genres_by_ids, create_movie, set_movie_genres
 
 
-def add_movie(db: Session, payload):
-    # Validate director existence
-    if not director_exists(db, payload.title and payload.director_id):
+
+def update_movie(db: Session, movie_id: int, payload):
+    # Validate path param
+    if movie_id < 1:
+        raise ValueError("Invalid movie_id")
+
+    # Ensure movie exists
+    movie = repo_get_movie_by_id(db, movie_id)
+    if movie is None:
+        return None
+
+    # Validate director
+    director = get_director_by_id(db, payload.director_id)
+    if director is None:
         raise ValueError("Invalid director_id or genres")
 
-    # Validate genres existence
-    genres = get_genres_by_ids(db, payload.genres)
-    if len(genres) != len(set(payload.genres)):
+    # Validate genres
+    unique_genre_ids = list(dict.fromkeys(payload.genres))
+    genres = get_genres_by_ids(db, unique_genre_ids)
+    if len(genres) != len(unique_genre_ids):
         raise ValueError("Invalid director_id or genres")
 
-    # Create movie + association rows in a transaction
-    movie = create_movie(db, payload.title, payload.director_id, payload.release_year, payload.cast)
-    set_movie_genres(db, movie.id, payload.genres)
+    # Apply changes in a transaction
+    try:
+        update_movie_fields(
+            db=db,
+            movie=movie,
+            title=payload.title,
+            director_id=payload.director_id,
+            release_year=payload.release_year,
+            cast=payload.cast,
+        )
+        replace_movie_genres(db, movie.id, unique_genre_ids)
 
-    db.commit()
-    db.refresh(movie)
+        db.commit()
+        db.refresh(movie)
+    except Exception:
+        db.rollback()
+        raise
 
     return {
         "id": movie.id,
         "title": movie.title,
         "release_year": movie.release_year,
-        "director": {"id": payload.director_id, "name": movie.director.name},
+        "director": {"id": director.id, "name": director.name},
+        "genres": [g.name for g in genres],
+        "cast": movie.cast,
+        "average_rating": None,  # Update endpoint typically doesn't recalc here
+        "ratings_count": 0,
+    }
+
+
+
+
+
+
+def add_movie(db: Session, payload):
+    # Validate director existence
+    director = get_director_by_id(db, payload.director_id)
+    if director is None:
+        raise ValueError("Invalid director_id or genres")
+
+    # Validate genres existence (all provided IDs must exist)
+    unique_genre_ids = list(dict.fromkeys(payload.genres))  # preserve order, remove duplicates
+    genres = get_genres_by_ids(db, unique_genre_ids)
+    if len(genres) != len(unique_genre_ids):
+        raise ValueError("Invalid director_id or genres")
+
+    # Create movie + association rows within a transaction
+    try:
+        movie = create_movie(
+            db=db,
+            title=payload.title,
+            director_id=payload.director_id,
+            release_year=payload.release_year,
+            cast=payload.cast,
+        )
+        insert_movie_genres(db, movie.id, unique_genre_ids)
+
+        db.commit()
+        db.refresh(movie)
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "id": movie.id,
+        "title": movie.title,
+        "release_year": movie.release_year,
+        "director": {"id": director.id, "name": director.name},
         "genres": [g.name for g in genres],
         "cast": movie.cast,
         "average_rating": None,
         "ratings_count": 0,
     }
+
+
+
+
+
 
 
 

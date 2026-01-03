@@ -1,11 +1,70 @@
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models import Movie, Director, Genre, MovieRating
 from app.models.movie_genre import genres_movie
 
 
+def get_movie_by_id(db: Session, movie_id: int) -> Movie | None:
+    # Fetch movie row by id
+    return db.execute(select(Movie).where(Movie.id == movie_id)).scalar_one_or_none()
 
+
+def update_movie_fields(db: Session, movie: Movie, title: str, director_id: int, release_year: int, cast: str | None) -> Movie:
+    # Update mutable fields on the Movie ORM object
+    movie.title = title
+    movie.director_id = director_id
+    movie.release_year = release_year
+    movie.cast = cast
+    db.add(movie)
+    db.flush()
+    return movie
+
+
+def replace_movie_genres(db: Session, movie_id: int, genre_ids: list[int]) -> None:
+    # Replace all existing genres for the movie with the provided list
+    db.execute(delete(genres_movie).where(genres_movie.c.movie_id == movie_id))
+    if not genre_ids:
+        return
+    db.execute(
+        genres_movie.insert(),
+        [{"movie_id": movie_id, "genre_id": gid} for gid in genre_ids],
+    )
+
+
+
+
+
+
+
+def get_director_by_id(db: Session, director_id: int) -> Director | None:
+    # Fetch director by id (None if not found)
+    return db.execute(select(Director).where(Director.id == director_id)).scalar_one_or_none()
+
+
+def get_genres_by_ids(db: Session, genre_ids: list[int]) -> list[Genre]:
+    # Fetch all genres matching the given IDs
+    if not genre_ids:
+        return []
+    return db.execute(select(Genre).where(Genre.id.in_(genre_ids))).scalars().all()
+
+
+def create_movie(db: Session, title: str, director_id: int, release_year: int, cast: str | None) -> Movie:
+    # Create Movie row (flush to get ID without committing)
+    movie = Movie(title=title, director_id=director_id, release_year=release_year, cast=cast)
+    db.add(movie)
+    db.flush()
+    return movie
+
+
+def insert_movie_genres(db: Session, movie_id: int, genre_ids: list[int]) -> None:
+    # Insert association rows into genres_movie
+    if not genre_ids:
+        return
+    db.execute(
+        genres_movie.insert(),
+        [{"movie_id": movie_id, "genre_id": gid} for gid in genre_ids],
+    )
 
 
 

@@ -1,26 +1,34 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
+
+
+class MovieUpdate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=300)
+    director_id: int = Field(..., ge=1)
+    release_year: int = Field(..., ge=1800, le=2100)
+    cast: Optional[str] = Field(None, max_length=1000)
+    genres: List[int] = Field(default_factory=list)
 
 
 class MovieCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=300)
     director_id: int = Field(..., ge=1)
     release_year: int = Field(..., ge=1800, le=2100)
-    cast: str | None = Field(None, max_length=1000)
+    cast: Optional[str] = Field(None, max_length=1000)
     genres: List[int] = Field(default_factory=list)
 
 
-class DirectorOut(BaseModel):
+class DirectorShort(BaseModel):
     id: int
     name: str
 
 
-class MovieOut(BaseModel):
+class MovieCreatedResponse(BaseModel):
     id: int
     title: str
     release_year: int
-    director: DirectorOut
+    director: DirectorShort
     genres: List[str]
-    cast: str | None
-    average_rating: float | None
+    cast: Optional[str]
+    average_rating: Optional[float]
     ratings_count: int

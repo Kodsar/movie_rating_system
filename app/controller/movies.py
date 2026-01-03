@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.controller.response import success, failure
 from app.services.movie_service import get_movies, get_movie_by_id, add_movie
-from app.schemas.movie import MovieCreate
-from app.services.movie_service import add_movie
+from app.schemas.movie import MovieCreate, MovieUpdate
+from app.services.movie_service import add_movie, update_movie
 
 
 router = APIRouter(prefix="/api/v1/movies", tags=["movies"])
@@ -20,6 +20,34 @@ def create_movie_endpoint(payload: MovieCreate, db: Session = Depends(get_db)):
         return success(data, http_status=status.HTTP_201_CREATED)
     except ValueError as e:
         return failure(422, str(e) if str(e) else "Invalid director_id or genres")
+
+
+
+
+@router.post(
+    "/",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        422: {
+            "description": "Validation Error",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "failure",
+                        "error": {"code": 422, "message": "Invalid director_id or genres"},
+                    }
+                }
+            },
+        }
+    },
+)
+def create_movie_endpoint(payload: MovieCreate, db: Session = Depends(get_db)):
+    try:
+        data = add_movie(db, payload)
+        return success(data, http_status=status.HTTP_201_CREATED)
+    except ValueError as e:
+        msg = str(e) if str(e) else "Invalid director_id or genres"
+        return failure(422, msg)
 
 
 
@@ -87,6 +115,37 @@ def movie_detail(
         data = get_movie_by_id(db=db, movie_id=movie_id)
     except ValueError:
         return failure(422, "Invalid movie_id")
+
+    if data is None:
+        return failure(404, "Movie not found")
+
+    return success(data, http_status=status.HTTP_200_OK)
+
+
+
+@router.put(
+    "/{movie_id}",
+    responses={
+        404: {
+            "description": "Movie Not Found",
+            "content": {"application/json": {"example": {"status": "failure", "error": {"code": 404, "message": "Movie not found"}}}},
+        },
+        422: {
+            "description": "Validation Error",
+            "content": {"application/json": {"example": {"status": "failure", "error": {"code": 422, "message": "Invalid director_id or genres"}}}},
+        },
+    },
+)
+def update_movie_endpoint(
+    movie_id: int = Path(..., ge=1),
+    payload: MovieUpdate = ...,
+    db: Session = Depends(get_db),
+):
+    try:
+        data = update_movie(db=db, movie_id=movie_id, payload=payload)
+    except ValueError as e:
+        msg = str(e) if str(e) else "Invalid input"
+        return failure(422, msg)
 
     if data is None:
         return failure(404, "Movie not found")
