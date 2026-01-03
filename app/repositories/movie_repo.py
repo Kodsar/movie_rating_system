@@ -5,7 +5,7 @@ from app.models import Movie, Director, Genre, MovieRating
 from app.models.movie_genre import genres_movie
 
 
-def list_movies_detailed(
+def list_movies_detailed_filtered(
     db: Session,
     page: int,
     page_size: int,
@@ -13,31 +13,41 @@ def list_movies_detailed(
     release_year: int | None = None,
     genre: str | None = None,
 ):
-    # Calculate pagination offset/limit
-    offset = (page - 1) * page_size
+    # Build a base query that returns filtered Movie IDs only.
+    # This keeps the count accurate and avoids heavy joins for pagination.
+    base = select(Movie.id)
 
-    # Base query for filtering movies (AND logic by chaining where())
-    base_movies = select(Movie.id)
-
+    # Apply filters with AND logic by chaining conditions.
     if title:
-        # Case-insensitive "contains" search
-        base_movies = base_movies.where(Movie.title.ilike(f"%{title}%"))
+        # Case-insensitive partial match on title
+        base = base.where(Movie.title.ilike(f"%{title}%"))
 
     if release_year is not None:
-        base_movies = base_movies.where(Movie.release_year == release_year)
+        base = base.where(Movie.release_year == release_year)
 
     if genre:
-        # Filter movies by genre name through association table
-        base_movies = (
-            base_movies.join(genres_movie, genres_movie.c.movie_id == Movie.id)
+        # Filter movies that have a genre with the given name
+        base = (
+            base.join(genres_movie, genres_movie.c.movie_id == Movie.id)
             .join(Genre, Genre.id == genres_movie.c.genre_id)
-            .where(Genre.name.ilike(genre))
+            .where(Genre.name == genre)
         )
 
-    filtered_ids_subq = base_movies.subquery()
+    # Ensure uniqueness when joins are involved (e.g., genre filter).
+    base_subq = base.distinct().subquery()
 
-    # Total items AFTER filters
-    total_items = db.scalar(select(func.count()).select_from(filtered_ids_subq)) or 0
+    # Count total items AFTER filters
+    total_items = db.scalar(select(func.count()).select_from(base_subq)) or 0
+
+    # Apply pagination on filtered IDs
+    offset = (page - 1) * page_size
+    paged_ids = db.execute(
+        select(base_subq.c.id).order_by(base_subq.c.id).offset(offset).limit(page_size)
+    ).scalars().all()
+
+    if not paged_ids:
+        # No items on this page (or filters too restrictive)
+        return int(total_items), [], {}
 
     # Aggregate ratings per movie (AVG + COUNT)
     ratings_agg = (
@@ -50,24 +60,18 @@ def list_movies_detailed(
         .subquery()
     )
 
-    # Fetch page of movies (only filtered ones)
+    # Fetch Movie + Director + rating aggregates for the paged IDs
     rows = db.execute(
-        select(
-            Movie,
-            Director,
-            ratings_agg.c.avg_rating,
-            ratings_agg.c.ratings_count,
-        )
-        .join(filtered_ids_subq, filtered_ids_subq.c.id == Movie.id)
+        select(Movie, Director, ratings_agg.c.avg_rating, ratings_agg.c.ratings_count)
         .join(Director, Movie.director_id == Director.id)
         .outerjoin(ratings_agg, ratings_agg.c.movie_id == Movie.id)
+        .where(Movie.id.in_(paged_ids))
         .order_by(Movie.id)
-        .offset(offset)
-        .limit(page_size)
     ).all()
 
     movies_pack = []
     movie_ids: list[int] = []
+
     for movie, director, avg_rating, ratings_count in rows:
         movies_pack.append(
             {
@@ -79,18 +83,57 @@ def list_movies_detailed(
         )
         movie_ids.append(movie.id)
 
-    # Fetch genres for movies in this page in a single query
-    genres_rows = []
-    if movie_ids:
-        genres_rows = db.execute(
-            select(genres_movie.c.movie_id, Genre.name)
-            .join(Genre, Genre.id == genres_movie.c.genre_id)
-            .where(genres_movie.c.movie_id.in_(movie_ids))
-        ).all()
+    # Fetch genres for all movies in the current page in a single query
+    genres_rows = db.execute(
+        select(genres_movie.c.movie_id, Genre.name)
+        .join(Genre, Genre.id == genres_movie.c.genre_id)
+        .where(genres_movie.c.movie_id.in_(movie_ids))
+    ).all()
 
-    # Build movie_id -> [genre names]
+    # Build a mapping: movie_id -> list of genre names
     genres_map: dict[int, list[str]] = {}
     for mid, gname in genres_rows:
         genres_map.setdefault(mid, []).append(gname)
 
-    return total_items, movies_pack, genres_map
+    return int(total_items), movies_pack, genres_map
+
+
+def get_movie_detail(db: Session, movie_id: int):
+    # Fetch movie + director; if not found, return None
+    row = db.execute(
+        select(Movie, Director)
+        .join(Director, Movie.director_id == Director.id)
+        .where(Movie.id == movie_id)
+    ).first()
+
+    if row is None:
+        return None
+
+    movie, director = row
+
+    # Aggregate ratings for the movie (AVG + COUNT)
+    ratings_row = db.execute(
+        select(
+            func.avg(MovieRating.score).label("avg_rating"),
+            func.count(MovieRating.id).label("ratings_count"),
+        ).where(MovieRating.movie_id == movie_id)
+    ).one()
+
+    # Fetch genres for this movie
+    genres = db.execute(
+        select(Genre.name)
+        .join(genres_movie, genres_movie.c.genre_id == Genre.id)
+        .where(genres_movie.c.movie_id == movie_id)
+    ).scalars().all()
+
+    return {
+        "movie": movie,
+        "director": director,
+        "genres": genres,
+        "avg_rating": ratings_row.avg_rating,
+        "ratings_count": ratings_row.ratings_count,
+    }
+
+
+# Backward-compatible alias to avoid import errors in older service code
+list_movies_detailed = list_movies_detailed_filtered
