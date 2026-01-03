@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Path, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -64,7 +64,7 @@ def movies_list(
     },
 )
 def movie_detail(
-    movie_id: int = Query(..., description="Movie ID (path parameter)"),
+    movie_id: int = Path(..., ge=1, description="Movie ID (path parameter)"),
     db: Session = Depends(get_db),
 ):
     try:
